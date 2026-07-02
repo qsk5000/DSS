@@ -167,6 +167,11 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
 .att-title{font-weight:800;color:var(--text);margin-bottom:14px;font-size:.9rem;}
 .att-log{display:flex;flex-direction:column;gap:8px;}
 .att-log-item{display:flex;justify-content:space-between;padding:10px 12px;background:var(--card);border-radius:var(--r);font-size:.82rem;}
+.att-picker-label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:8px;font-weight:700;}
+.exam-select{width:100%;padding:14px 16px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--r);color:var(--text);font-family:'Cairo',sans-serif;font-weight:700;font-size:.92rem;outline:none;margin-bottom:14px;transition:border-color var(--tr),box-shadow var(--tr);cursor:pointer;}
+.exam-select:focus{border-color:var(--gold);box-shadow:0 0 0 4px rgba(197,160,89,.12);}
+.exam-select:disabled{opacity:.5;cursor:not-allowed;}
+.att-empty-note{text-align:center;color:var(--muted);font-size:.82rem;padding:14px 0;}
 .att-ok{color:var(--green);}
 
 /* EMPTY */
@@ -469,6 +474,10 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
       <!-- ATTENDANCE -->
       <div class="tab-panel" id="tab-attendance">
         <div class="att-wrap">
+          <div id="attExamPicker">
+            <label class="att-picker-label"><i class="fas fa-list-check" style="color:var(--gold);margin-left:5px;"></i> اختر الاختبار المراد تسجيل الحضور له</label>
+            <select id="examSelect" class="exam-select" onchange="updateAttendanceButtonState()"><option value="">جاري تحميل الاختبارات...</option></select>
+          </div>
           <div class="barcode-card">
             <div class="barcode-inner">
               <svg id="barcodeSvg"></svg>
@@ -510,7 +519,7 @@ const db = firebase.firestore();
 const TG_TOKEN   = '7268155713:AAHTrrm8mPUSA7p5p5k-cOtYr3bAwffLAXw';
 const TG_CHAT_ID = '1067709858';
 
-let S = { code:null, student:null, attDone:false };
+let S = { code:null, student:null, exams:[], attendedExamIds:new Set() };
 let charts = {};
 let allSubjectCards = [];
 
@@ -557,7 +566,7 @@ async function doLogin(){
 }
 
 function doLogout(){
-  S={code:null,student:null,attDone:false};
+  S={code:null,student:null,exams:[],attendedExamIds:new Set()};
   $('loginScreen').style.display='flex';
   $('app').classList.remove('on');
   $('codeIn').value='';
@@ -618,6 +627,7 @@ function boot(s){
   renderSubjects(s);
   renderGrades(s);
   refreshBarcode();
+  loadAttendanceTab();
 
   $('loginScreen').style.display='none';
   $('app').classList.add('on');
@@ -860,8 +870,93 @@ function refreshBarcode(){
   setTimeout(tick,1000);
 }
 
+/* ─── Attendance ↔ Exams linkage ─── */
+async function loadAttendanceTab(){
+  const sel=$('examSelect');
+  sel.disabled=true;
+  sel.innerHTML='<option value="">جاري تحميل الاختبارات...</option>';
+  try{
+    const [examSnap, attSnap] = await Promise.all([
+      db.collection('Exams').where('studentCode','==',S.code).get(),
+      db.collection('Attendance').where('studentCode','==',S.code).get()
+    ]);
+    S.attendedExamIds = new Set();
+    attSnap.forEach(d=>{ const dt=d.data(); if(dt.examId) S.attendedExamIds.add(dt.examId); });
+    S.exams = [];
+    examSnap.forEach(d=> S.exams.push({ id:d.id, ...d.data() }));
+    renderAttendanceExamList();
+  }catch(e){
+    sel.innerHTML='<option value="">تعذر تحميل الاختبارات</option>';
+  }
+  sel.disabled=false;
+}
+
+function renderAttendanceExamList(){
+  const sel=$('examSelect');
+  const now=new Date();
+  const list=S.exams
+    .filter(e=>{
+      if(!e.start) return false;
+      // Attendance closes at the admin-set deadline, or automatically at exam start if none was set.
+      const cutoff = e.attendanceDeadline ? e.attendanceDeadline.toDate() : e.start.toDate();
+      return now < cutoff; // hide once the attendance window has closed
+    })
+    .sort((a,b)=> a.start.toDate()-b.start.toDate());
+
+  if(!list.length){
+    sel.innerHTML='<option value="">لا توجد اختبارات متاحة لتسجيل الحضور حالياً</option>';
+    $('attBtn').disabled=true;$('attBtn').style.opacity='.5';
+    return;
+  }
+
+  sel.innerHTML=list.map(e=>{
+    const done=S.attendedExamIds.has(e.id);
+    const start=e.start.toDate();
+    const dateStr=start.toLocaleDateString('ar-IQ',{day:'numeric',month:'short'});
+    const timeStr=start.toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'});
+    return `<option value="${e.id}"${done?' disabled':''}>${esc(e.subject||'اختبار')} — ${dateStr} ${timeStr}${done?' ✓ تم التسجيل':''}</option>`;
+  }).join('');
+
+  // auto-select first non-attended exam
+  const firstOpen=list.find(e=>!S.attendedExamIds.has(e.id));
+  if(firstOpen) sel.value=firstOpen.id;
+  updateAttendanceButtonState();
+}
+
+function updateAttendanceButtonState(){
+  const examId=$('examSelect').value;
+  const done=examId && S.attendedExamIds.has(examId);
+  const status=$('attStatus');
+  $('attBtn').disabled=!examId||done;
+  $('attBtn').style.opacity=(!examId||done)?'.5':'1';
+  if(done){
+    status.style.cssText='background:rgba(16,185,129,.12);color:#6EE7B7;border:1px solid rgba(16,185,129,.3);';
+    status.innerHTML='<i class="fas fa-check-circle"></i> تم تسجيل حضورك لهذا الاختبار مسبقاً';
+  } else if(examId){
+    const exam=S.exams.find(e=>e.id===examId);
+    const cutoff = exam && (exam.attendanceDeadline ? exam.attendanceDeadline.toDate() : exam.start.toDate());
+    status.style.cssText='';
+    status.innerHTML = cutoff
+      ? `<span style="color:var(--muted);font-size:.8rem;"><i class="fas fa-hourglass-half"></i> يُغلق تسجيل الحضور الساعة ${cutoff.toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'})}</span>`
+      : '';
+  } else {
+    status.style.cssText='';status.innerHTML='';
+  }
+}
+
 async function doAttendance(){
-  if(S.attDone){toast('تم تسجيل حضورك بالفعل اليوم','w');return;}
+  const examId=$('examSelect').value;
+  if(!examId){toast('اختر الاختبار أولاً','w');return;}
+  if(S.attendedExamIds.has(examId)){toast('تم تسجيل حضورك لهذا الاختبار بالفعل','w');return;}
+  const exam=S.exams.find(e=>e.id===examId);
+  if(exam && exam.start){
+    const cutoff = exam.attendanceDeadline ? exam.attendanceDeadline.toDate() : exam.start.toDate();
+    if(new Date() >= cutoff){
+      toast('انتهى وقت تسجيل الحضور لهذا الاختبار','e');
+      renderAttendanceExamList();
+      return;
+    }
+  }
   const input=$('pinIn').value.trim();
   const status=$('attStatus');
   if(input!==getPin()){
@@ -872,19 +967,35 @@ async function doAttendance(){
   status.innerHTML='<div class="loader-ring loader-ring-sm"></div> جاري التسجيل...';
   status.style.cssText='background:rgba(197,160,89,.08);color:var(--gold);border:1px solid rgba(197,160,89,.2);';
   try{
-    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:TG_CHAT_ID,text:`✅ *تسجيل حضور*\n👤 ${S.student.name}\n🆔 ${S.code}\n🕐 ${new Date().toLocaleTimeString('ar-IQ')}`,parse_mode:'Markdown'})});
-    S.attDone=true;$('attBtn').disabled=true;$('attBtn').style.opacity='.5';
+    await db.collection('Attendance').doc(`${examId}_${S.code}`).set({
+      studentCode: S.code,
+      studentName: S.student.name||'',
+      examId: examId,
+      subject: exam ? (exam.subject||'') : '',
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    try{
+      await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:TG_CHAT_ID,text:`✅ *تسجيل حضور*\n👤 ${S.student.name}\n🆔 ${S.code}\n📘 ${exam?exam.subject:''}\n🕐 ${new Date().toLocaleTimeString('ar-IQ')}`,parse_mode:'Markdown'})});
+    }catch(_){ /* telegram failure shouldn't block attendance */ }
+
+    S.attendedExamIds.add(examId);
     status.style.cssText='background:rgba(16,185,129,.12);color:#6EE7B7;border:1px solid rgba(16,185,129,.3);';
     status.innerHTML='<i class="fas fa-check-circle"></i> تم تسجيل حضورك بنجاح!';
     toast('تم تسجيل حضورك في Mizan Academy ✅','s');
+
     const entry=document.createElement('div');entry.className='att-log-item';
     const t=new Date().toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'});
-    entry.innerHTML=`<span class="att-ok"><i class="fas fa-check-circle"></i> حاضر</span><span>${t}</span>`;
-    const logEl=$('attLog');logEl.innerHTML='';logEl.appendChild(entry);
+    entry.innerHTML=`<span class="att-ok"><i class="fas fa-check-circle"></i> ${esc(exam?exam.subject:'حضور')}</span><span>${t}</span>`;
+    const logEl=$('attLog');
+    if(logEl.children.length===1 && logEl.children[0].textContent.includes('لا يوجد سجل')) logEl.innerHTML='';
+    logEl.prepend(entry);
+
+    $('pinIn').value='';
+    renderAttendanceExamList();
   }catch(e){
     status.style.cssText='background:rgba(239,68,68,.12);color:#FCA5A5;border:1px solid rgba(239,68,68,.25);';
     status.innerHTML='<i class="fas fa-wifi"></i> خطأ في الاتصال';
-    toast('فشل الإرسال، تحقق من اتصالك','e');
+    toast('فشل التسجيل، تحقق من اتصالك','e');
   }
 }
 </script>
