@@ -326,6 +326,65 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
 .sub-exam-name{font-weight:800;color:var(--text);font-size:.9rem;margin-bottom:4px;}
 .sub-exam-meta{font-size:.75rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;}
 
+/* subject header "open full schedule" link */
+.subject-link-btn{
+  background:var(--goldBg);border:1px solid rgba(197,160,89,.3);
+  color:var(--gold);font-family:'Cairo',sans-serif;font-weight:800;
+  font-size:.72rem;padding:7px 13px;border-radius:10px;cursor:pointer;
+  display:flex;align-items:center;gap:6px;white-space:nowrap;
+  transition:all var(--tr);flex-shrink:0;
+}
+.subject-link-btn:hover{background:rgba(197,160,89,.18);transform:translateY(-1px);}
+@media(max-width:480px){.subject-link-btn span{display:none;}.subject-link-btn{padding:9px;}}
+
+/* ═══════════════════════════════════════
+   SUBJECT DETAIL PAGE (per-subject schedule)
+═══════════════════════════════════════ */
+.subj-page-wrap{max-width:900px;margin:0 auto;}
+.subj-page-back{
+  display:inline-flex;align-items:center;gap:8px;background:transparent;
+  border:1px solid var(--border);color:var(--muted);
+  font-family:'Cairo',sans-serif;font-weight:700;font-size:.85rem;
+  padding:9px 18px;border-radius:var(--r);cursor:pointer;
+  margin-bottom:22px;transition:all var(--tr);
+}
+.subj-page-back:hover{border-color:rgba(197,160,89,.4);color:var(--gold);}
+.subj-page-head{display:flex;align-items:center;gap:16px;margin-bottom:26px;}
+.subj-page-icon{
+  width:56px;height:56px;border-radius:16px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.4rem;flex-shrink:0;
+}
+.subj-page-title{font-size:1.3rem;font-weight:900;color:var(--text);}
+.subj-page-sub{font-size:.8rem;color:var(--muted);margin-top:2px;}
+.subj-table-wrap{
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:var(--r-lg);overflow:hidden;
+}
+.subj-table{width:100%;border-collapse:collapse;}
+.subj-table th{
+  background:var(--ink3);color:var(--muted);font-size:.75rem;font-weight:800;
+  padding:13px 14px;text-align:right;border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+.subj-table td{
+  padding:13px 14px;font-size:.85rem;color:var(--text);
+  border-bottom:1px solid var(--border);font-weight:600;
+}
+.subj-table tr:last-child td{border-bottom:none;}
+.subj-table tr:hover td{background:var(--goldBg);}
+.subj-type-badge{
+  padding:4px 11px;border-radius:20px;font-size:.7rem;font-weight:800;
+  display:inline-flex;align-items:center;gap:5px;border:1px solid;white-space:nowrap;
+}
+.subj-type-sched{background:rgba(59,130,246,.1);color:#93C5FD;border-color:rgba(59,130,246,.25);}
+.subj-type-hw{background:rgba(245,158,11,.1);color:#FCD34D;border-color:rgba(245,158,11,.25);}
+.subj-type-exam{background:rgba(239,68,68,.1);color:#FCA5A5;border-color:rgba(239,68,68,.25);}
+@media(max-width:600px){
+  .subj-table-wrap{overflow-x:auto;}
+  .subj-table{min-width:520px;}
+}
+
 @media(max-width:480px){
   .welcome-banner{padding:20px;}
   .kpi-grid{grid-template-columns:1fr 1fr;}
@@ -460,6 +519,21 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
           </div>
         </div>
         <div id="subjectsPanel"></div>
+      </div>
+
+      <!-- SUBJECT DETAIL PAGE -->
+      <div class="tab-panel" id="tab-subject-page">
+        <div class="subj-page-wrap">
+          <button class="subj-page-back" onclick="closeSubjectPage()"><i class="fas fa-arrow-right"></i> رجوع إلى المواد</button>
+          <div class="subj-page-head">
+            <div class="subj-page-icon" id="subjPageIcon"><i class="fas fa-book"></i></div>
+            <div>
+              <div class="subj-page-title" id="subjPageTitle">—</div>
+              <div class="subj-page-sub">جدول المادة الكامل — الحصص، الواجبات، ومواعيد الامتحانات</div>
+            </div>
+          </div>
+          <div id="subjPageContent"></div>
+        </div>
       </div>
 
       <!-- GRADES -->
@@ -631,7 +705,11 @@ function boot(s){
 
   $('loginScreen').style.display='none';
   $('app').classList.add('on');
-  switchTab('overview');
+  if(location.hash.match(/^#subject-\d+$/)){
+    handleSubjectHash();
+  } else {
+    switchTab('overview');
+  }
   toast(`أهلاً ${(s.name||'').split(' ')[0]} 👋`,'s');
 }
 
@@ -765,6 +843,7 @@ function buildSubjectCard(sub,i){
 
   // chips
   const chips=[
+    sub.scheduleLink?`<span class="chip" style="background:rgba(16,185,129,.1);color:#6EE7B7;border-color:rgba(16,185,129,.25);"><i class="fas fa-link"></i>رابط جدول</span>`:'',
     hasSched?`<span class="chip chip-sched"><i class="fas fa-clock"></i>${sub.schedule.length} حصة</span>`:'',
     hasHw?`<span class="chip chip-hw"><i class="fas fa-pen"></i>${sub.homework.length} واجب</span>`:'',
     hasExam?`<span class="chip chip-exam"><i class="fas fa-file-alt"></i>${sub.exams.length} امتحان</span>`:'',
@@ -819,6 +898,7 @@ function buildSubjectCard(sub,i){
         <div class="subject-name">${esc(sub.name)}</div>
         <div class="subject-chips">${chips||'<span style="font-size:.72rem;color:var(--dim)">لا توجد بيانات بعد</span>'}</div>
       </div>
+      <button class="subject-link-btn" onclick="event.stopPropagation();openSubjectPage(${i})" title="فتح جدول المادة الكامل"><i class="fas fa-table"></i><span>الجدول الكامل</span></button>
       <div class="subject-chevron"><i class="fas fa-chevron-down"></i></div>
     </div>
     <div class="subject-body">
@@ -835,6 +915,79 @@ function buildSubjectCard(sub,i){
     </div>
   </div>`;
 }
+
+/* ─── Subject detail page (dedicated in-portal link per subject) ─── */
+function openSubjectPage(i){
+  location.hash = 'subject-' + i;
+}
+
+function closeSubjectPage(){
+  history.pushState('', document.title, window.location.pathname + window.location.search);
+  switchTab('subjects');
+}
+
+function renderSubjectPage(i){
+  const subjects=buildSubjectList(S.student);
+  const sub=subjects[i];
+  if(!sub){ closeSubjectPage(); return; }
+
+  const c=subColor(i);
+  $('subjPageIcon').style.background=c.bg;
+  $('subjPageIcon').style.color=c.txt;
+  $('subjPageIcon').innerHTML=`<i class="${c.icon}"></i>`;
+  $('subjPageTitle').textContent=sub.name;
+
+  const isImage = sub.scheduleLink && /\.(jpe?g|png|webp|gif)(\?.*)?$/i.test(sub.scheduleLink);
+  const linkBlockHTML = sub.scheduleLink ? (
+    isImage
+      ? `<div class="subj-sec"><a href="${esc(sub.scheduleLink)}" target="_blank"><img src="${esc(sub.scheduleLink)}" alt="جدول ${esc(sub.name)}" style="width:100%;border-radius:var(--r-lg);border:1px solid var(--border);display:block;"></a></div>`
+      : `<div class="subj-sec"><a href="${esc(sub.scheduleLink)}" target="_blank" class="btn-gold" style="display:flex;text-decoration:none;padding:16px;border-radius:var(--r-lg);"><i class="fas fa-external-link-alt"></i> فتح جدول المادة</a></div>`
+  ) : '';
+
+  const rows=[];
+  (sub.schedule||[]).forEach(sl=>{
+    rows.push({type:'sched',label:'حصة',icon:'fa-clock',detail:sl.room?`قاعة ${sl.room}`:'—',note:sl.day||'—',time:sl.time||'—'});
+  });
+  (sub.homework||[]).forEach(h=>{
+    rows.push({type:'hw',label:'واجب',icon:'fa-pen',detail:h.task||'—',note:'موعد التسليم',time:h.due||'—'});
+  });
+  (sub.exams||[]).forEach(e=>{
+    rows.push({type:'exam',label:'امتحان',icon:'fa-file-alt',detail:e.name||'—',note:e.room?`قاعة ${e.room}`:'—',time:e.date||'—'});
+  });
+
+  if(!rows.length){
+    $('subjPageContent').innerHTML = linkBlockHTML || '<div class="empty"><i class="fas fa-calendar-times"></i><p>لا توجد بيانات مضافة لهذه المادة بعد</p></div>';
+    return;
+  }
+
+  const badgeCls={sched:'subj-type-sched',hw:'subj-type-hw',exam:'subj-type-exam'};
+
+  $('subjPageContent').innerHTML=`
+    ${linkBlockHTML}
+    <div class="subj-table-wrap">
+      <table class="subj-table">
+        <thead><tr><th>النوع</th><th>التفاصيل</th><th>ملاحظة</th><th>الوقت / التاريخ</th></tr></thead>
+        <tbody>
+          ${rows.map(r=>`
+            <tr>
+              <td><span class="subj-type-badge ${badgeCls[r.type]}"><i class="fas ${r.icon}"></i> ${r.label}</span></td>
+              <td>${esc(r.detail)}</td>
+              <td>${esc(r.note)}</td>
+              <td>${esc(r.time)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function handleSubjectHash(){
+  const m=location.hash.match(/^#subject-(\d+)$/);
+  if(m && S.student){
+    renderSubjectPage(parseInt(m[1],10));
+    switchTab('subject-page');
+  }
+}
+window.addEventListener('hashchange',handleSubjectHash);
 
 function filterSubjects(q){
   allSubjectCards.forEach(card=>{
