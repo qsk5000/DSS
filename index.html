@@ -65,6 +65,21 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
 .btn-gold:active{transform:translateY(0);}
 .btn-ghost{background:transparent;border:1.5px solid var(--border);color:var(--muted);padding:10px 18px;border-radius:var(--r);font-family:'Cairo',sans-serif;font-weight:700;cursor:pointer;transition:all var(--tr);font-size:.88rem;}
 .btn-ghost:hover{border-color:rgba(197,160,89,.4);color:var(--gold);}
+.quick-login-chip{display:inline-flex;align-items:center;gap:7px;background:var(--ink2);border:1px dashed rgba(197,160,89,.3);color:var(--muted);font-family:'Cairo',sans-serif;font-weight:700;font-size:.78rem;padding:8px 16px;border-radius:20px;cursor:pointer;transition:all var(--tr);}
+.quick-login-chip:hover{border-color:var(--gold);color:var(--gold2);background:var(--goldBg);}
+
+/* GRADE BADGE / ATTENDANCE / DUE-SOON */
+.sb-grade-chip{margin-top:10px;display:inline-flex;align-items:center;gap:6px;padding:4px 13px;border-radius:20px;font-size:.74rem;font-weight:800;border:1px solid;}
+.due-banner{background:linear-gradient(90deg,rgba(245,158,11,.1),transparent);border:1px solid rgba(245,158,11,.25);border-right:3px solid var(--amber);border-radius:var(--r-lg);padding:16px 18px;margin-bottom:20px;}
+.due-banner-head{display:flex;align-items:center;gap:8px;font-weight:900;color:#FCD34D;font-size:.88rem;margin-bottom:10px;}
+.due-item{display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:.83rem;color:var(--text);border-top:1px solid rgba(245,158,11,.12);}
+.due-item:first-of-type{border-top:none;}
+.due-item b{font-weight:700;}
+.due-item span{color:var(--muted);font-size:.76rem;font-weight:700;white-space:nowrap;}
+.grade-filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+.gf-chip{padding:7px 16px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'Cairo',sans-serif;font-weight:700;font-size:.8rem;cursor:pointer;transition:all var(--tr);}
+.gf-chip:hover{border-color:rgba(197,160,89,.3);color:var(--text);}
+.gf-chip.on{background:var(--card);color:var(--gold);border-color:rgba(197,160,89,.3);}
 
 /* APP SHELL */
 #app{display:none;flex-direction:column;min-height:100vh;}
@@ -414,6 +429,7 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
         onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn-gold" onclick="doLogin()"><i class="fas fa-sign-in-alt"></i> دخول المنصة</button>
+    <div id="loginQuickChip" style="text-align:center;margin-top:14px;"></div>
   </div>
 </div>
 
@@ -449,6 +465,7 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
         <div class="sb-avatar" id="sbAvatar">؟</div>
         <div class="sb-name" id="sbName">—</div>
         <div class="sb-badge" id="sbBadge">—</div>
+        <div id="sbGradeChip"></div>
       </div>
       <div id="sideNav"></div>
     </aside>
@@ -489,7 +506,14 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
             <div class="kpi-lbl">عدد المواد</div>
             <div class="kpi-bar"><div class="kpi-fill" style="width:40%;background:var(--blue)"></div></div>
           </div>
+          <div class="kpi">
+            <div class="kpi-icon" style="background:rgba(139,92,246,.1);color:var(--purple,#8B5CF6);"><i class="fas fa-qrcode"></i></div>
+            <div class="kpi-val" id="kpiAttRate">—</div>
+            <div class="kpi-lbl">نسبة الحضور</div>
+            <div class="kpi-bar"><div class="kpi-fill" id="kpiAttBar" style="width:0%;background:#8B5CF6"></div></div>
+          </div>
         </div>
+        <div id="dueSoonBanner"></div>
         <div class="charts-row">
           <div class="chart-card">
             <div class="chart-title"><i class="fas fa-chart-line"></i> مستوى الأداء</div>
@@ -541,6 +565,12 @@ body{font-family:'Cairo',sans-serif;background:var(--ink);color:var(--text);min-
         <div class="sec-head">
           <div class="sec-title"><i class="fas fa-chart-bar"></i> سجل الدرجات</div>
           <div class="sec-count" id="gradesCount">0</div>
+        </div>
+        <div class="grade-filters" id="gradeFilters">
+          <button class="gf-chip on" data-f="all">الكل</button>
+          <button class="gf-chip" data-f="hi">ممتاز</button>
+          <button class="gf-chip" data-f="mid">متوسط</button>
+          <button class="gf-chip" data-f="lo">ضعيف</button>
         </div>
         <div id="gradesPanel"></div>
       </div>
@@ -634,6 +664,7 @@ async function doLogin(){
     const doc=await db.collection('StudentPortal').doc(code).get();
     if(!doc.exists){toast('الرمز غير مسجّل في النظام','e');unloader();return;}
     S.code=code;S.student=doc.data();
+    localStorage.setItem('mizan_portal_last_code',code);
     boot(S.student);
   }catch(e){toast('خطأ في الاتصال بالخادم','e');}
   unloader();
@@ -660,6 +691,17 @@ function parsePct(g){
   return parseFloat(s)||0;
 }
 
+function gradeInfo(avg){
+  if(avg>=95) return {letter:'A+',label:'متميز استثنائي',color:'#10B981'};
+  if(avg>=90) return {letter:'A', label:'ممتاز',           color:'#34D399'};
+  if(avg>=80) return {letter:'B+',label:'جيد جداً مرتفع',   color:'#60A5FA'};
+  if(avg>=70) return {letter:'B', label:'جيد جداً',         color:'#3B82F6'};
+  if(avg>=60) return {letter:'C+',label:'جيد',             color:'#F59E0B'};
+  if(avg>=50) return {letter:'C', label:'مقبول',           color:'#FBBF24'};
+  if(avg>=40) return {letter:'D', label:'ضعيف',            color:'#F87171'};
+  return               {letter:'F', label:'ضعيف جداً',       color:'#EF4444'};
+}
+
 /* Subject accent colours — 10 distinct hues */
 const SUB_COLORS=[
   {bg:'rgba(59,130,246,.15)',txt:'#93C5FD',bar:'#3B82F6',icon:'fas fa-flask'},
@@ -682,6 +724,13 @@ function boot(s){
   $('sbAvatar').textContent=init;
   $('sbName').textContent=s.name||'—';
   $('sbBadge').textContent='اشتراك '+(s.type||'عام');
+  const _grades=s.dailyGrades||[];
+  const _scores=_grades.map(g=>parsePct(g.grade));
+  const _avg=_scores.length?(_scores.reduce((a,b)=>a+b,0)/_scores.length):0;
+  const _grd=gradeInfo(_avg);
+  $('sbGradeChip').innerHTML=_grades.length
+    ?`<span class="sb-grade-chip" style="background:${_grd.color}22;color:${_grd.color};border-color:${_grd.color}55;">تقدير ${_grd.letter} — ${_grd.label}</span>`
+    :'';
   $('wbName').textContent=(s.name||'').split(' ')[0]||s.name;
   $('wbDate').textContent=new Date().toLocaleDateString('ar-IQ',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
@@ -727,7 +776,37 @@ function renderOverview(s){
   $('kpiSubjectCount').textContent=subjects.length;
 
   const upcoming=(s.exams||[]).sort((a,b)=>new Date(a.date)-new Date(b.date))[0];
-  $('kpiNextExam').textContent=upcoming?upcoming.name:'—';
+  if(upcoming){
+    const d=new Date(upcoming.date);
+    const today=new Date(); today.setHours(0,0,0,0);
+    const dDay=new Date(d); dDay.setHours(0,0,0,0);
+    const diff=Math.round((dDay-today)/86400000);
+    const when = isNaN(diff)?'' : diff===0?' (اليوم)': diff===1?' (غداً)': diff>1?` (خلال ${diff} يوم)`:'';
+    $('kpiNextExam').textContent=upcoming.name+when;
+  } else {
+    $('kpiNextExam').textContent='—';
+  }
+
+  // due-soon homework banner (within next 3 days)
+  const subjectsForDue=buildSubjectList(s);
+  const dueSoon=[];
+  subjectsForDue.forEach(sub=>{
+    (sub.homework||[]).forEach(h=>{
+      if(!h.due) return;
+      const d=new Date(h.due);
+      if(isNaN(d)) return;
+      const today=new Date(); today.setHours(0,0,0,0);
+      const dd=new Date(d); dd.setHours(0,0,0,0);
+      const diff=Math.round((dd-today)/86400000);
+      if(diff>=0 && diff<=3) dueSoon.push({subject:sub.name,task:h.task,due:h.due,diff});
+    });
+  });
+  dueSoon.sort((a,b)=>a.diff-b.diff);
+  $('dueSoonBanner').innerHTML=dueSoon.length?`
+    <div class="due-banner">
+      <div class="due-banner-head"><i class="fas fa-triangle-exclamation"></i> واجبات قريبة الاستحقاق</div>
+      ${dueSoon.map(d=>`<div class="due-item"><b>${esc(d.subject)}</b> — ${esc(d.task)} <span>${d.diff===0?'اليوم':d.diff===1?'غداً':'خلال '+d.diff+' أيام'}</span></div>`).join('')}
+    </div>`:'';
 
   if(charts.line)charts.line.destroy();
   if(charts.dough)charts.dough.destroy();
@@ -997,15 +1076,33 @@ function filterSubjects(q){
 }
 
 /* ─── Grades ─── */
+let allGrades=[];
 function renderGrades(s){
-  const grades=s.dailyGrades||[];
-  $('gradesCount').textContent=grades.length;
+  allGrades=s.dailyGrades||[];
+  $('gradesCount').textContent=allGrades.length;
+  bindGradeFilters();
+  drawGrades('all');
+}
+function drawGrades(filter){
+  const grades=[...allGrades].reverse().filter((g,i)=>{
+    if(filter==='all') return true;
+    return gradeColour(g.grade)===filter;
+  });
   $('gradesPanel').innerHTML=grades.length
-    ?[...grades].reverse().map((g,i)=>{
+    ?grades.map((g,i)=>{
         const cl=gradeColour(g.grade);const c=subColor(i);
         return `<div class="grade-row"><div class="gr-left"><div class="gr-icon" style="background:${c.bg};color:${c.txt};"><i class="${c.icon}"></i></div><div><div class="gr-subject">${esc(g.subject)}</div><div class="gr-date">${esc(g.date)}</div></div></div><div class="grade-pill ${cl}">${esc(g.grade)}</div></div>`;
       }).join('')
-    :'<div class="empty"><i class="fas fa-inbox"></i><p>لا توجد درجات مسجّلة</p></div>';
+    :'<div class="empty"><i class="fas fa-inbox"></i><p>لا توجد درجات ضمن هذا التصنيف</p></div>';
+}
+function bindGradeFilters(){
+  document.querySelectorAll('#gradeFilters .gf-chip').forEach(btn=>{
+    btn.onclick=()=>{
+      document.querySelectorAll('#gradeFilters .gf-chip').forEach(b=>b.classList.remove('on'));
+      btn.classList.add('on');
+      drawGrades(btn.dataset.f);
+    };
+  });
 }
 
 /* ─── Attendance ─── */
@@ -1034,14 +1131,40 @@ async function loadAttendanceTab(){
       db.collection('Attendance').where('studentCode','==',S.code).get()
     ]);
     S.attendedExamIds = new Set();
-    attSnap.forEach(d=>{ const dt=d.data(); if(dt.examId) S.attendedExamIds.add(dt.examId); });
+    const attRecords=[];
+    attSnap.forEach(d=>{ const dt=d.data(); if(dt.examId) S.attendedExamIds.add(dt.examId); attRecords.push(dt); });
     S.exams = [];
     examSnap.forEach(d=> S.exams.push({ id:d.id, ...d.data() }));
     renderAttendanceExamList();
+    renderAttendanceHistory(attRecords);
+    updateAttendanceRateKpi(attRecords.length, S.exams.length);
   }catch(e){
     sel.innerHTML='<option value="">تعذر تحميل الاختبارات</option>';
   }
   sel.disabled=false;
+}
+
+function renderAttendanceHistory(records){
+  const logEl=$('attLog');
+  if(!records.length){
+    logEl.innerHTML='<div style="color:var(--muted);font-size:.82rem;text-align:center;padding:10px 0;">لا يوجد سجل بعد</div>';
+    return;
+  }
+  const sorted=[...records].sort((a,b)=>{
+    const ta=a.timestamp&&a.timestamp.toDate?a.timestamp.toDate():0;
+    const tb=b.timestamp&&b.timestamp.toDate?b.timestamp.toDate():0;
+    return tb-ta;
+  });
+  logEl.innerHTML=sorted.map(r=>{
+    const t=r.timestamp&&r.timestamp.toDate?r.timestamp.toDate().toLocaleString('ar-IQ',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
+    return `<div class="att-log-item"><span class="att-ok"><i class="fas fa-check-circle"></i> ${esc(r.subject||'حضور')}</span><span>${t}</span></div>`;
+  }).join('');
+}
+
+function updateAttendanceRateKpi(attendedCount,totalExams){
+  const rate = totalExams>0 ? Math.round((attendedCount/totalExams)*100) : (attendedCount>0?100:0);
+  $('kpiAttRate').textContent = totalExams>0 ? rate+'%' : '—';
+  $('kpiAttBar').style.width = rate+'%';
 }
 
 function renderAttendanceExamList(){
@@ -1151,6 +1274,14 @@ async function doAttendance(){
     toast('فشل التسجيل، تحقق من اتصالك','e');
   }
 }
+
+/* ─── Remember last code ─── */
+(function setupQuickLogin(){
+  const last=localStorage.getItem('mizan_portal_last_code');
+  if(!last) return;
+  $('codeIn').value=last;
+  $('loginQuickChip').innerHTML=`<button class="quick-login-chip" onclick="doLogin()"><i class="fas fa-history"></i> دخول سريع برمز: ${esc(last)}</button>`;
+})();
 </script>
 </body>
 </html>
